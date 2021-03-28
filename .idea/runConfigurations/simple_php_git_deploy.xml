@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="simple-php-git-deploy" type="PhpRemoteDebugRunConfigurationType" factoryName="PHP Remote Debug" singleton="false" server_name="localhost" session_id="PHPSTORM">
+    <RunnerSettings RunnerId="PhpRemoteDebugRunner" />
+    <ConfigurationWrapper RunnerId="PhpRemoteDebugRunner" />
+    <method />
+  </configuration>
+</component>
