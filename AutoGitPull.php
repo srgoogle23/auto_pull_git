@@ -40,6 +40,7 @@ class AutoGitPull
     protected $password;
     protected $event;
     protected $shh;
+    protected $type;
 
     function __construct($args = array())
     {
@@ -102,27 +103,26 @@ class AutoGitPull
         );
         if ($this->isTryMkDir) {
             //try to make dir
-
             if (($this->backupDir !== '') && (!$this->ssh->ssh_is_dir($this->backupDir))) {
-                $this->commander->execute(sprintf('mkdir -p %1$s', $this->backupDir));
+                $this->ssh->ssh_mk_dir(sprintf('mkdir -p %1$s', $this->backupDir));
             }
             if (($this->tmpDir !== '') && (!$this->ssh->ssh_is_dir($this->tmpDir))) {
-                $this->commander->execute(sprintf('mkdir -p %1$s', $this->tmpDir));  
+                $this->ssh->ssh_mk_dir(sprintf('mkdir -p %1$s', $this->tmpDir));  
             }
             if (($this->targetDir !== '') && (!$this->ssh->ssh_is_dir($this->targetDir))) {
-                $this->commander->execute(sprintf('mkdir -p %1$s', $this->targetDir));
+                $this->ssh->ssh_mk_dir(sprintf('mkdir -p %1$s', $this->targetDir));
             }
 
             //try to create dir
             foreach ($this->branchMap as $branch => $dir) {
                 $targetDir = $this->targetDir . $dir;
                 if (($dir !== '') && !$this->ssh->ssh_is_dir($dir)) {
-                    $this->commander->execute(sprintf('mkdir -p %1$s', $dir));
+                    $this->ssh->ssh_mk_dir(sprintf('mkdir -p %1$s', $dir));
                 }
                 foreach ($this->authorMap as $author => $authorDir) {
                     $authorDirPath = $targetDir . $authorDir;
                     if (($authorDirPath !== '') && !$this->ssh->ssh_is_dir($authorDirPath)) {
-                        $this->commander->execute(sprintf('mkdir -p %1$s', $authorDirPath));
+                        $this->ssh->ssh_mk_dir(sprintf('mkdir -p %1$s', $authorDirPath));
                     }
                 }
             }
@@ -223,38 +223,49 @@ class AutoGitPull
             $targetDir = $this->targetDir . $repositoryDir;
         }
         //check if need backup
-        if ( ($this->backupDir !== '') && ($this->ssh->ssh_is_dir($targetDir))) {
-            $this->doBackup($this->backupDir, $targetDir);
+        if ( ($this->backupDir !== '') && ($this->ssh->ssh_is_dir($targetDir)) && ($this->ssh->ssh_is_dir($this->targetDir))) {
+            $this->doBackup($this->backupDir, $this->targetDir);
         }
 
         //check if git init on target dir
-        if ($this->ssh->ssh_is_dir($targetDir . "/.git")) {
-            $this->doFetch($branchName, $targetDir);
+        if ($this->ssh->ssh_is_dir($this->targetDir . ".git")) {
+            $this->doFetch($branchName, $this->targetDir);
+            $this->type = 'fetch';
         } else {
             $this->doClone($gitURL, $targetDir, $branchName);
+            $this->type = 'clone';
         }
         if($this->isUseComposer)
         {
             $this->doComposer($targetDir);
         }
-        if($isUsersync)
-        {
-            $this->doRSYNC($targetDir, $this->targetDir . $repositoryDir);
-            if($this->isNeedClearUp){
-                $this->doCleanUp($tmpDir);
+        if($this->type == 'clone'){
+            if($isUsersync)
+            {
+                $this->doRSYNC($targetDir, $this->targetDir . $repositoryDir);
+                if($this->isNeedClearUp){
+                    $this->doCleanUp($tmpDir);
+                }
+            }
+        }else{
+            if($this->type == 'fetch'){
+                if($this->isNeedClearUp){
+                    $this->doCleanUp($tmpDir);
+                }
             }
         }
-        $this->commander->execute();
+        $output = $this->ssh->getOutput();
+        echo $output;
     }
 
     private function doClone($gitURL, $targetDir, $branchName)
     {
         //clean directory
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec_eq(sprintf(
             'rm -rf %1$s/*'
             , $targetDir
         ));
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec_eq(sprintf(
             'git clone --depth=1 --branch %1$s %2$s %3$s'
             , $branchName
             , $gitURL
@@ -263,38 +274,51 @@ class AutoGitPull
     }
     private function doFetch($branchName, $targetDir)
     {
-        $this->commander->enqueue(sprintf(
+        /*
+        $this->ssh->ssh_exec(sprintf(
+            'cd %1$s'
+            , $targetDir
+        ));
+        */
+        $this->ssh->ssh_exec(sprintf(
             'git fetch origin %1$s'
             , $branchName
         ));
-        $this->commander->enqueue('git reset --hard FETCH_HEAD');
+        $this->ssh->ssh_exec('git reset --hard FETCH_HEAD');
 
-        /*$this->commander->enqueue(sprintf(
-            'cd %1$s'
-            , $targetDir
-        ));*/
-
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec(sprintf(
             'git submodule update --init --recursive'
         ));
+
+        $this->ssh->ssh_exec('git pull --force');
+        
     }
 
     private function doBackup($backupDir, $targetDir)
     {
-        if (count(glob($targetDir."/*")) !== 0 ) { //Check if target dir is not empty
-            $this->commander->enqueue(sprintf(
-                "tar --exclude='%s*' -czf %s/%s-%s-%s.tar.gz %s*"
-                , $backupDir
-                , $backupDir
-                , basename($targetDir)
-                , md5($targetDir)
-                , date('YmdHis')
-                , $targetDir // We're backing up this directory into BACKUP_DIR
-            ));
+        $last = substr($backupDir, -1);
+        $last = ' ' . $last . ' ';
+        if($last == ' / ' or $last == " \ " or $last == " * "){
+            $backupDir= substr($backupDir, 0, strlen($backupDir) - 1);
         }
+        $last = substr($backupDir, -1);
+        $last = ' ' . $last . ' ';
+        if($last == ' / ' or $last == " \ " or $last == " * "){
+            $backupDir= substr($backupDir, 0, strlen($backupDir) - 1);
+        }
+        $this->ssh->ssh_exec_eq(sprintf(
+            "tar --exclude='%s*' -czf %s/%s-%s-%s.tar.gz %s*"
+            , $backupDir
+            , $backupDir
+            , basename($targetDir)
+            , md5($targetDir)
+            , date('YmdHis')
+            , $targetDir // We're backing up this directory into BACKUP_DIR
+        ));
+        
     }
     private function doComposer($targetDir){
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec_eq(sprintf(
             'composer --no-ansi --no-interaction --no-progress --working-dir=%s install %s'
             , $targetDir
             , $this->composerOptions
@@ -306,7 +330,7 @@ class AutoGitPull
         {
             $exclude .= ' --exclude=' . $exc;
         }
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec_eq(sprintf(
             'rsync -rltgoDzvO %1$s %2$s %3$s %4$s'
             , $source
             , $dest
@@ -316,7 +340,7 @@ class AutoGitPull
     }
     private function doCleanUp($dir)
     {
-        $this->commander->enqueue(sprintf(
+        $this->ssh->ssh_exec_eq(sprintf(
             'rm -rf %s'
             , $dir
         ));
