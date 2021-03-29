@@ -1,10 +1,4 @@
 <?php
-/**
- * Project : simple-php-git-deploy
- * User: thuytien
- * Date: 11/10/2014
- * Time: 12:39 AM sdfasdf
- */
 
 namespace AutoGitPuller\Server\Github;
 
