@@ -94,6 +94,7 @@ class AutoGitPull
                 $this->ssh->__set($key, $args[$key]);
             endif;
         endforeach;
+        $this->ssh->set_instance();
     }
 
     public function checkEnvironment()
