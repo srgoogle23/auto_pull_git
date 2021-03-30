@@ -13,6 +13,7 @@ class SSH{
     protected $last_command_results;
     protected $output = array();
 
+
     public static function getInstance()
     {
         static $instance = null;
